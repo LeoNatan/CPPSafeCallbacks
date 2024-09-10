@@ -8,12 +8,27 @@
 #define SAFE_CALLBACKS_DEBUG_PRINTS 1
 
 #include "SafeCallbacks.hpp"
-#include <dispatch/dispatch.h>
+
 #include <functional>
 #include <memory>
 #include <print>
+#include <semaphore>
+#include <thread>
+#include <chrono>
 
-#define RELEASE_BEFORE_CALL 0
+/*
+ RELEASE_AFTER = release owner after callbacks have finished
+ RELEASE_BEFORE = release owner before any callback has been called
+ RELEASE_DURING = release owner while callbacks are running
+ RELEASE_INSIDE = release owner from inside a callback
+ */
+
+#define RELEASE_AFTER 0
+#define RELEASE_BEFORE 1
+#define RELEASE_DURING 2
+#define RELEASE_INSIDE 3
+
+#define RELEASE_BEFORE_OR_DURING_CALL RELEASE_AFTER
 
 #if _LIBCPP_STD_VER <= 20
 namespace std {
@@ -55,66 +70,57 @@ public:
 	}
 };
 
-class auto_dispatch_group
-{
-public:
-	auto_dispatch_group()
-	{
-		shared_group.reset(dispatch_group_create(), [](dispatch_group_t group) {
-			dispatch_release(group);
-		});
-	}
-	auto_dispatch_group(const auto_dispatch_group& other)
-	{
-		shared_group = other.shared_group;
-		dispatch_group_enter(*this);
-	}
-	~auto_dispatch_group()
-	{
-		dispatch_group_leave(*this);
-	}
-	auto_dispatch_group(auto_dispatch_group&&) = delete;
-	auto_dispatch_group& operator=(auto_dispatch_group&&) = delete;
-	
-	operator dispatch_group_t() const { return shared_group.get(); }
-	
-private:
-	std::shared_ptr<dispatch_group_s> shared_group;
-};
-
-auto make_scope_dispatch_group_leave(dispatch_group_t* group)
-{
-	return std::shared_ptr<dispatch_group_t>(group, [](dispatch_group_t* group) {
-		dispatch_group_leave(*group);
-	});
-}
-
 std::string string_returning_func(double asd)
 {
 	std::println("Hello from string_returning_func!");
 	return "from function";
 }
 
-void test(auto_dispatch_group group)
+class recursion_helper
 {
-	auto owner = new is_it_safe();
-	
+public:
+	std::function<void(int)> func;
+};
+
+std::thread test(is_it_safe* owner)
+{
 	auto void_callback = owner->make_safe([owner]() {
-		std::println("{0}", owner->some->c_str());
-	});
-	auto static_member_func_callback = owner->make_safe(&is_it_safe::static_member_func);
+		std::println("void_callback: {0}", owner->some->c_str());
+#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_DURING
+		std::println("Sleeping for 2 seconds inside void_callback");
+		std::this_thread::sleep_for (std::chrono::seconds(2));
+#elif RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
+		std::println("Deleting owner from inside void_callback");
+		delete owner;
+#endif
+	}, "void_callback");
+	auto static_member_func_callback = owner->make_safe(&is_it_safe::static_member_func, "static_member_func_callback");
 	std::function<void(void)> member_func = std::bind(&is_it_safe::member_func, owner);
-	auto member_funcCallback = owner->make_safe(member_func);
+	auto member_funcCallback = owner->make_safe(member_func, "member_funcCallback");
 	std::function<void(void)> member_func_const = std::bind(&is_it_safe::member_func_const, owner);
-	auto member_func_const_callback = owner->make_safe(member_func_const);
-	auto str_callback = owner->make_safe("cancelled default value", string_returning_func);
-//	auto str_callback = owner->make_safe(123, string_returning_func); // <- This should produce an error!
+	auto member_func_const_callback = owner->make_safe(member_func_const, "member_func_const_callback");
+	auto str_callback = owner->make_safe("cancelled default value", string_returning_func, "str_callback");
+	//	auto str_callback = owner->make_safe(123, string_returning_func); // <- This should produce an error!
 	auto default_return_val = owner->make_safe([] {
 		return std::string("lambda return value");
-	});
-	auto non_default_constructible_callback = owner->make_safe(non_default_constructible(false), [] { return non_default_constructible(true); });
+	}, "default_return_val");
+	auto non_default_constructible_callback = owner->make_safe(non_default_constructible(false), [] { return non_default_constructible(true); }, "non_default_constructible_callback");
+	//	auto non_default_constructible_callback = owner->make_safe([] { return non_default_constructible(true); }); // <- This should produce an error!
 	
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^ {
+	auto rec = new recursion_helper();
+	auto recursive_callback = rec->func = owner->make_safe([rec, owner](int count) mutable {
+		std::println("recursive count {0}", count);
+		if(count == 0)
+		{
+			delete rec;
+			return;
+		}
+		rec->func(count - 1);
+	}, "recursive_callback");
+	
+	return std::thread([=] {
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		
 		void_callback();
 		static_member_func_callback();
 		member_funcCallback();
@@ -122,29 +128,41 @@ void test(auto_dispatch_group group)
 		std::println("str_callback: {0}", str_callback([]{return 3.0;}()));
 		std::println("default_return_val: {0}", default_return_val());
 		non_default_constructible_callback();
-		
-		auto local = group;
+		recursive_callback(3);
 	});
-	
-#if !RELEASE_BEFORE_CALL
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-#endif
-		delete owner;
-		
-		auto local = group;
-#if !RELEASE_BEFORE_CALL
-	});
-#endif
 }
 
 int main(int argc, const char * argv[]) {
-	auto group = auto_dispatch_group();
-
-	test(group);
-	dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-		exit(0);
-	});
+	auto owner = new is_it_safe();
 	
-	dispatch_main();
+	std::thread call_callbacks = test(owner);
+	
+	auto delete_owner_f = [owner] {
+#if RELEASE_BEFORE_OR_DURING_CALL != RELEASE_INSIDE
+#if RELEASE_BEFORE_OR_DURING_CALL != RELEASE_BEFORE
+		std::this_thread::sleep_for(
+#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_AFTER
+									std::chrono::seconds(2)
+#else
+									std::chrono::seconds(1)
+#endif
+									);
+#endif
+		
+		delete owner;
+#endif
+	};
+
+#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_BEFORE || RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
+	delete_owner_f();
+	std::thread delete_owner([]{});
+#else
+	std::thread delete_owner(delete_owner_f);
+#endif
+	
+	call_callbacks.join();
+	delete_owner.join();
+	
+	return 0;
 }
 
