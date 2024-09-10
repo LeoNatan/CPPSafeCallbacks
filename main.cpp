@@ -15,6 +15,12 @@
 
 #define RELEASE_BEFORE_CALL 0
 
+#if _LIBCPP_STD_VER <= 20
+namespace std {
+	void println(const char*, ...) {}
+}
+#endif
+
 class non_default_constructible
 {
 public:
@@ -115,6 +121,7 @@ void test(auto_dispatch_group group)
 		member_func_const_callback();
 		std::println("str_callback: {0}", str_callback([]{return 3.0;}()));
 		std::println("default_return_val: {0}", default_return_val());
+		non_default_constructible_callback();
 		
 		auto local = group;
 	});
