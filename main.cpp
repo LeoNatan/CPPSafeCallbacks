@@ -65,10 +65,9 @@ class non_default_constructible
 {
 public:
 	non_default_constructible() = delete;
-	non_default_constructible(bool)
-	{
-		
-	}
+	non_default_constructible(const non_default_constructible&) = delete;
+	non_default_constructible(non_default_constructible&&) = default;
+	non_default_constructible(bool) {};
 };
 
 class is_it_safe: public safe_callbacks
@@ -115,7 +114,7 @@ std::thread test(is_it_safe* owner)
 		std::println("Sleeping for 2 seconds inside void_callback");
 		std::this_thread::sleep_for (std::chrono::seconds(2));
 #elif RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
-		std::println("Deleting owner from inside void_callback");
+		std::println("void_callback: Deleting owner from inside void_callback");
 		delete owner;
 #endif
 	}, "void_callback");
@@ -125,12 +124,12 @@ std::thread test(is_it_safe* owner)
 	std::function<void(void)> member_func_const = std::bind(&is_it_safe::member_func_const, owner);
 	auto member_func_const_callback = owner->make_safe(member_func_const, "member_func_const_callback");
 	auto str_callback = owner->make_safe("cancelled default value", string_returning_func, "str_callback");
-	//	auto str_callback = owner->make_safe(123, string_returning_func); // <- This should produce an error!
+//	auto str_callback_ = owner->make_safe(123, string_returning_func); // <- This should produce an error!
 	auto default_return_val = owner->make_safe([] {
 		return std::string("lambda return value");
 	}, "default_return_val");
 	auto non_default_constructible_callback = owner->make_safe(non_default_constructible(false), [] { return non_default_constructible(true); }, "non_default_constructible_callback");
-	//	auto non_default_constructible_callback = owner->make_safe([] { return non_default_constructible(true); }); // <- This should produce an error!
+//	auto non_default_constructible_callback_ = owner->make_safe([] { return non_default_constructible(true); }); // <- This should produce an error!
 	
 	auto rec = new recursion_helper();
 	auto recursive_callback = rec->func = owner->make_safe([rec, owner](int count) mutable {
