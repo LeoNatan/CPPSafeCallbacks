@@ -28,12 +28,37 @@
 #define RELEASE_DURING 2
 #define RELEASE_INSIDE 3
 
+#if !defined(RELEASE_BEFORE_OR_DURING_CALL)
 #define RELEASE_BEFORE_OR_DURING_CALL RELEASE_AFTER
+#endif
 
 #if _LIBCPP_STD_VER <= 20
+#if _LIBCPP_STD_VER == 20
+#include <format>
+#include <iostream>
+
 namespace std {
-	void println(const char*, ...) {}
+
+template <typename... Args>
+void println(std::format_string<Args...> fmt, Args&&... args) {
+	std::cout << std::format(fmt, std::forward<Args>(args)...) << endl;
 }
+
+}
+
+#else
+#include <iostream>
+namespace std {
+
+template<typename ...Args>
+void println(const char* fmt, Args&&... args) {
+	std::cout << fmt;
+	((std::cout << ' ' << std::forward<Args>(args)), ...);
+	std::cout << std::endl;
+}
+
+}
+#endif
 #endif
 
 class non_default_constructible
