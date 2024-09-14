@@ -32,8 +32,8 @@
 #define RELEASE_BEFORE_OR_DURING_CALL RELEASE_AFTER
 #endif
 
-#if _LIBCPP_STD_VER <= 20
-#if _LIBCPP_STD_VER == 20
+#if __cplusplus <= 202002L
+#if __cplusplus == 202002L
 #include <format>
 #include <iostream>
 
@@ -70,13 +70,15 @@ public:
 	non_default_constructible(bool) {};
 };
 
-class is_it_safe: public safe_callbacks
+class is_it_safe
 {
 public:
-	std::string* some;
+	is_it_safe(): some(std::make_unique<std::string>("ACCESSING POINTER MEMBER OF is_it_safe")) {}
 	
-public:
-	is_it_safe(): some(new std::string("ACCESSING POINTER MEMBER OF is_it_safe")) {}
+	const std::string& get_string()
+	{
+		return *some;
+	}
 	
 	static void static_member_func()
 	{
@@ -92,6 +94,22 @@ public:
 	{
 		std::println("From member_func_const");
 	}
+	
+	auto make_safe(auto&& c, const char*&& name = "")
+	{
+		return cb.make_safe(std::forward<decltype(c)>(c), std::forward<const char*>(name));
+	}
+	
+	auto make_safe(auto&& r, auto&& c, const char*&& name = "")
+	{
+		return cb.make_safe(std::forward<decltype(r)>(r), std::forward<decltype(c)>(c), std::forward<const char*>(name));
+	}
+	
+private:
+	std::unique_ptr<std::string> some;
+	
+	//safe_callback instances should be placed at the bottom of the members list.
+	safe_callbacks cb;
 };
 
 std::string string_returning_func(double asd)
@@ -109,11 +127,12 @@ public:
 std::thread test(is_it_safe* owner)
 {
 	auto void_callback = owner->make_safe([owner]() {
-		std::println("void_callback: {0}", owner->some->c_str());
 #if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_DURING
 		std::println("Sleeping for 2 seconds inside void_callback");
 		std::this_thread::sleep_for (std::chrono::seconds(2));
-#elif RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
+#endif
+		std::println("void_callback: {0}", owner->get_string().c_str());
+#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
 		std::println("void_callback: Deleting owner from inside void_callback");
 		delete owner;
 #endif

@@ -14,7 +14,7 @@
 #include <mutex>
 #include <atomic>
 
-#if __cplusplus < 202302L
+#if !(__cplusplus > 202002L)
 #undef SAFE_CALLBACKS_DEBUG_PRINTS
 #define SAFE_CALLBACKS_DEBUG_PRINTS 0
 #elif !defined(SAFE_CALLBACKS_DEBUG_PRINTS)
