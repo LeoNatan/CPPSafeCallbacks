@@ -12,7 +12,6 @@
 #include <functional>
 #include <memory>
 #include <print>
-#include <semaphore>
 #include <thread>
 #include <chrono>
 
@@ -139,7 +138,7 @@ std::thread test(is_it_safe* owner)
 	}, "void_callback");
 	auto static_member_func_callback = owner->make_safe(&is_it_safe::static_member_func, "static_member_func_callback");
 	std::function<void(void)> member_func = std::bind(&is_it_safe::member_func, owner);
-	auto member_funcCallback = owner->make_safe(member_func, "member_funcCallback");
+	auto member_func_callback = owner->make_safe(member_func, "member_func_callback");
 	std::function<void(void)> member_func_const = std::bind(&is_it_safe::member_func_const, owner);
 	auto member_func_const_callback = owner->make_safe(member_func_const, "member_func_const_callback");
 	auto str_callback = owner->make_safe("cancelled default value", string_returning_func, "str_callback");
@@ -166,7 +165,7 @@ std::thread test(is_it_safe* owner)
 		
 		void_callback();
 		static_member_func_callback();
-		member_funcCallback();
+		member_func_callback();
 		member_func_const_callback();
 		std::println("str_callback: {0}", str_callback([]{return 3.0;}()));
 		std::println("default_return_val: {0}", default_return_val());

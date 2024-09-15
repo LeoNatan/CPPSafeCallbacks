@@ -101,7 +101,7 @@ public:
 	std::unordered_map<void*, std::weak_ptr<std::function<void(void)>>> cancellables;
 };
 
-template<typename DVR, typename R, typename ...Args>
+template <typename DVR, typename F>
 class safe_function_wrapper;
 
 template<typename DVR, typename R, typename ...Args>
@@ -139,7 +139,7 @@ public:
 	inline
 	void make_cancel()
 	{
-		cancel = std::make_shared<std::function<void(void)>>(std::bind(&safe_function_wrapper<DVR, R, Args...>::cancel, this->weak_from_this()));
+		cancel = std::make_shared<std::function<void(void)>>(std::bind(&safe_function_wrapper<DVR, R(Args...)>::cancel, this->weak_from_this()));
 	}
 	
 	inline
@@ -161,7 +161,7 @@ public:
 };
 
 template<typename DVR, typename R, typename ...Args>
-class safe_function_wrapper
+class safe_function_wrapper<DVR, R(Args...)>
 {
 public:
 	safe_function_wrapper(std::function<R(Args...)>&& callable, default_value_t<DVR>&& default_return_value, std::weak_ptr<safe_callbacks_impl> owner, const char* &&name)
@@ -190,28 +190,26 @@ public:
 				// Original callable had a void return type.
 				return;
 			}
+			else if constexpr(std::is_void_v<DVR>)
+			{
+				// No default value was provided to make_safe().
+				return {};
+			}
+			else if constexpr(std::is_copy_constructible_v<DVR>)
+			{
+				// The provided default value is copy constructible, return by value.
+				return impl->default_return_value;
+			}
 			else
 			{
-				if constexpr(std::is_void_v<DVR>)
-				{
-					// No default value was provided to make_safe().
-					return {};
-				}
-				else
-				{
-					if constexpr(std::is_copy_constructible_v<DVR>)
-					{
-						// The provided default value is copy constructible, return by value.
-						return impl->default_return_value;
-					}
-					else
-					{
-						// The provided default value is no copy constructible, return by move.
-						// Further calls to the wrapper is undefined behavior.
-						return std::move(impl->default_return_value);
-					}
-				}
+				// The provided default value is not copy constructible, return by move.
+				// Further calls to the wrapper is undefined behavior.
+				return std::move(impl->default_return_value);
 			}
+			
+#if __cplusplus > 202002L
+			std::unreachable();
+#endif
 		}
 		
 #if SAFE_CALLBACKS_DEBUG_PRINTS
@@ -220,6 +218,9 @@ public:
 		return (*target)(std::forward<Args>(args)...);
 	}
 	
+	friend class safe_function_wrapper_impl<DVR, R, Args...>;
+	
+protected:
 	static void cancel(std::weak_ptr<safe_function_wrapper_impl<DVR, R, Args...>> weak_impl)
 	{
 		if (auto impl = weak_impl.lock())
@@ -283,10 +284,10 @@ public:
 	/// In case of cancellation, in cases where the return type of `callable` is not void, the wrapper function constructs and returns a default return value.
 	/// - Parameter callable: A `std::function` to make safe
 	template <typename R, typename ...Args> inline
-	std::function<R(Args...)> make_safe(std::function<R(Args...)>&& callable, const char*&& name = "")
+	safe_function_wrapper<void, R(Args...)> make_safe(std::function<R(Args...)>&& callable, const char*&& name = "")
 	{
 		static_assert(is_constructible_rv_v<R>, "Return value type is not constructible");
-		return safe_function_wrapper<void, R, Args...>(std::forward<std::function<R(Args...)>>(callable), {}, impl, std::forward<const char*>(name));
+		return safe_function_wrapper<void, R(Args...)>(std::forward<std::function<R(Args...)>>(callable), {}, impl, std::forward<const char*>(name));
 	}
 
 	/// Creates a safe `std::function` wrapper around `callable` and ties its lifetime to the owner's.
@@ -314,11 +315,11 @@ public:
 	/// - Parameter default_return_value: The default return value to return in case the wrapper is cancelled
 	/// - Parameter callable: A `std::function` to make safe
 	template <typename DVR, typename R, typename ...Args> inline
-	std::function<R(Args...)> make_safe(DVR&& default_return_value, std::function<R(Args...)>&& callable, const char*&& name = "")
+	safe_function_wrapper<DVR, R(Args...)> make_safe(DVR&& default_return_value, std::function<R(Args...)>&& callable, const char*&& name = "")
 	{
 		static_assert(is_compatible_rv_v<DVR, R>, "Incompatible default return value type");
 		static_assert(is_returnable_rv_v<DVR>, "Unsupported default return value type");
-		return safe_function_wrapper<DVR, R, Args...>(std::forward<std::function<R(Args...)>>(callable), std::forward<DVR>(default_return_value), impl, std::forward<const char*>(name));
+		return safe_function_wrapper<DVR, R(Args...)>(std::forward<std::function<R(Args...)>>(callable), std::forward<DVR>(default_return_value), impl, std::forward<const char*>(name));
 	}
 	
 private:
