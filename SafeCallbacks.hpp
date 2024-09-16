@@ -53,7 +53,7 @@ static inline constexpr bool is_returnable_rv_v = is_returnable_rv<DVR>::value;
 class safe_callbacks_impl
 {
 public:
-	safe_callbacks_impl(): lock(), cancellables() {}
+	safe_callbacks_impl() = default;
 	safe_callbacks_impl(const safe_callbacks_impl&) = delete;
 	safe_callbacks_impl& operator=(const safe_callbacks_impl&) = delete;
 	
@@ -244,9 +244,7 @@ public:
 	// These are explicitly allowed and do nothing on purpose.
 	// Wrapped callables are tied to a specific object, and should not be copied or moved.
 	safe_callbacks(const safe_callbacks&): impl(std::make_shared<safe_callbacks_impl>()) {}
-	safe_callbacks& operator=(const safe_callbacks&) { return *this; }
-	safe_callbacks(safe_callbacks&&): impl(std::make_shared<safe_callbacks_impl>()) {}
-	safe_callbacks& operator=(safe_callbacks&&) { return *this; }
+	safe_callbacks& operator=(const safe_callbacks&) noexcept { return *this; }
 	~safe_callbacks()
 	{
 #if SAFE_CALLBACKS_DEBUG_PRINTS
