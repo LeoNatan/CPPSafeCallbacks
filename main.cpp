@@ -69,6 +69,18 @@ public:
 	non_default_constructible(bool) {};
 };
 
+std::string string_returning_func(double asd)
+{
+	std::println("Hello from string_returning_func!");
+	return "from function";
+}
+
+class recursion_helper
+{
+public:
+	std::function<void(int)> func;
+};
+
 class is_it_safe
 {
 public:
@@ -94,14 +106,55 @@ public:
 		std::println("From member_func_const");
 	}
 	
-	auto make_safe(auto&& c, const char*&& name = "")
+	std::thread test()
 	{
-		return cb.make_safe(std::forward<decltype(c)>(c), std::forward<const char*>(name));
-	}
-	
-	auto make_safe(auto&& r, auto&& c, const char*&& name = "")
-	{
-		return cb.make_safe(std::forward<decltype(r)>(r), std::forward<decltype(c)>(c), std::forward<const char*>(name));
+		auto void_callback = cb.make_safe([this]() {
+#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_DURING
+			std::println("Sleeping for 2 seconds inside void_callback");
+			std::this_thread::sleep_for (std::chrono::seconds(2));
+#endif
+			std::println("void_callback: {0}", this->get_string().c_str());
+#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
+			std::println("void_callback: Deleting owner from inside void_callback");
+			delete this;
+#endif
+		}, "void_callback");
+		auto static_member_func_callback = cb.make_safe(&is_it_safe::static_member_func, "static_member_func_callback");
+		std::function<void(void)> member_func = std::bind(&is_it_safe::member_func, this);
+		auto member_func_callback = cb.make_safe(member_func, "member_func_callback");
+		std::function<void(void)> member_func_const = std::bind(&is_it_safe::member_func_const, this);
+		auto member_func_const_callback = cb.make_safe(member_func_const, "member_func_const_callback");
+		auto str_callback = cb.make_safe("cancelled default value", string_returning_func, "str_callback");
+//		auto str_callback_ = cb.make_safe(123, string_returning_func); // <- This should produce an error!
+		auto default_return_val = cb.make_safe([] {
+			return 3.0;
+		}, "default_return_val");
+		auto non_default_constructible_callback = cb.make_safe(non_default_constructible(false), [] { return non_default_constructible(true); }, "non_default_constructible_callback");
+//		auto non_default_constructible_callback_ = cb.make_safe([] { return non_default_constructible(true); }); // <- This should produce an error!
+		
+		auto rec = new recursion_helper();
+		auto recursive_callback = rec->func = cb.make_safe([rec, this](int count) mutable {
+			std::println("recursive count {0}", count);
+			if(count == 0)
+			{
+				delete rec;
+				return;
+			}
+			rec->func(count - 1);
+		}, "recursive_callback");
+		
+		return std::thread([=] {
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			
+			void_callback();
+			static_member_func_callback();
+			member_func_callback();
+			member_func_const_callback();
+			std::println("str_callback: {0}", str_callback([]{return 3.0;}()));
+			std::println("default_return_val: {0}", default_return_val());
+			non_default_constructible_callback();
+			recursive_callback(3);
+		});
 	}
 	
 private:
@@ -111,73 +164,10 @@ private:
 	safe_callbacks cb;
 };
 
-std::string string_returning_func(double asd)
-{
-	std::println("Hello from string_returning_func!");
-	return "from function";
-}
-
-class recursion_helper
-{
-public:
-	std::function<void(int)> func;
-};
-
-std::thread test(is_it_safe* owner)
-{
-	auto void_callback = owner->make_safe([owner]() {
-#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_DURING
-		std::println("Sleeping for 2 seconds inside void_callback");
-		std::this_thread::sleep_for (std::chrono::seconds(2));
-#endif
-		std::println("void_callback: {0}", owner->get_string().c_str());
-#if RELEASE_BEFORE_OR_DURING_CALL == RELEASE_INSIDE
-		std::println("void_callback: Deleting owner from inside void_callback");
-		delete owner;
-#endif
-	}, "void_callback");
-	auto static_member_func_callback = owner->make_safe(&is_it_safe::static_member_func, "static_member_func_callback");
-	std::function<void(void)> member_func = std::bind(&is_it_safe::member_func, owner);
-	auto member_func_callback = owner->make_safe(member_func, "member_func_callback");
-	std::function<void(void)> member_func_const = std::bind(&is_it_safe::member_func_const, owner);
-	auto member_func_const_callback = owner->make_safe(member_func_const, "member_func_const_callback");
-	auto str_callback = owner->make_safe("cancelled default value", string_returning_func, "str_callback");
-//	auto str_callback_ = owner->make_safe(123, string_returning_func); // <- This should produce an error!
-	auto default_return_val = owner->make_safe([] {
-		return std::string("lambda return value");
-	}, "default_return_val");
-	auto non_default_constructible_callback = owner->make_safe(non_default_constructible(false), [] { return non_default_constructible(true); }, "non_default_constructible_callback");
-//	auto non_default_constructible_callback_ = owner->make_safe([] { return non_default_constructible(true); }); // <- This should produce an error!
-	
-	auto rec = new recursion_helper();
-	auto recursive_callback = rec->func = owner->make_safe([rec, owner](int count) mutable {
-		std::println("recursive count {0}", count);
-		if(count == 0)
-		{
-			delete rec;
-			return;
-		}
-		rec->func(count - 1);
-	}, "recursive_callback");
-	
-	return std::thread([=] {
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
-		
-		void_callback();
-		static_member_func_callback();
-		member_func_callback();
-		member_func_const_callback();
-		std::println("str_callback: {0}", str_callback([]{return 3.0;}()));
-		std::println("default_return_val: {0}", default_return_val());
-		non_default_constructible_callback();
-		recursive_callback(3);
-	});
-}
-
 int main(int argc, const char * argv[]) {
 	auto owner = new is_it_safe();
 	
-	std::thread call_callbacks = test(owner);
+	std::thread call_callbacks = owner->test();
 	
 	auto delete_owner_f = [owner] {
 #if RELEASE_BEFORE_OR_DURING_CALL != RELEASE_INSIDE

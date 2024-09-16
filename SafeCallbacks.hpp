@@ -265,7 +265,7 @@ public:
 		impl->cancellables.clear();
 	}
 		
-	/// Creates a safe `std::function` wrapper around `callable` and ties its lifetime to the owner's.
+	/// Creates a safe function object wrapper around `callable` and ties its lifetime to the owner's.
 	///
 	/// If the owning object is released, the wrapper function is cancelled and automatically replaces the wrapped `callable` with a no-op.
 	///
@@ -277,7 +277,7 @@ public:
 		return make_safe(std::function{std::forward<C>(callable)}, std::forward<const char*>(name));
 	}
 	
-	/// Creates a safe `std::function` wrapper around `callable` and ties its lifetime to the owner's.
+	/// Creates a safe function object wrapper around `callable` and ties its lifetime to the owner's.
 	///
 	/// If the owning object is released, the wrapper function is cancelled and automatically replaces the wrapped `callable` with a no-op.
 	///
@@ -290,14 +290,14 @@ public:
 		return safe_function_wrapper<void, R(Args...)>(std::forward<std::function<R(Args...)>>(callable), {}, impl, std::forward<const char*>(name));
 	}
 
-	/// Creates a safe `std::function` wrapper around `callable` and ties its lifetime to the owner's.
+	/// Creates a safe function object wrapper around `callable` and ties its lifetime to the owner's.
 	///
 	/// If the owning object is released, the wrapper function is cancelled and automatically replaces the wrapped `callable` with a no-op.
 	///
 	/// In case of cancellation, the wrapper function returns the provided default return value. If the default return value is copy constructible,
 	/// it is returned by value. Otherwise, it is returned by move. In case of return by move, it is undefined behavior of the wrapper function
 	/// is called more than once.
-	/// - Parameter default_return_value: The default return value to return in case the wrapper is cancelled
+	/// - Parameter default_return_value: The default value to return in case the wrapper is called after it has been cancelled
 	/// - Parameter callable: A callable to make safe
 	template <typename DVR, typename C> inline
 	auto make_safe(DVR&& default_return_value, C&& callable, const char*&& name = "")
@@ -305,14 +305,14 @@ public:
 		return make_safe(std::forward<DVR>(default_return_value), std::function{std::forward<C>(callable)}, std::forward<const char*>(name));
 	}
 	
-	/// Creates a safe `std::function` wrapper around `callable` and ties its lifetime to the owner's.
+	/// Creates a safe function object wrapper around `callable` and ties its lifetime to the owner's.
 	///
 	/// If the owning object is released, the wrapper function is cancelled and automatically replaces the wrapped `callable` with a no-op.
 	///
 	/// In case of cancellation, the wrapper function returns the provided default return value. If the default return value is copy constructible,
 	/// it is returned by value. Otherwise, it is returned by move. In case of return by move, it is undefined behavior if the wrapper function
 	/// is called more than once.
-	/// - Parameter default_return_value: The default return value to return in case the wrapper is cancelled
+	/// - Parameter default_return_value: The default value to return in case the wrapper is called after it has been cancelled
 	/// - Parameter callable: A `std::function` to make safe
 	template <typename DVR, typename R, typename ...Args> inline
 	safe_function_wrapper<DVR, R(Args...)> make_safe(DVR&& default_return_value, std::function<R(Args...)>&& callable, const char*&& name = "")
